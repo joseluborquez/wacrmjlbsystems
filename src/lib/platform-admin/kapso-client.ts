@@ -224,6 +224,62 @@ export async function fetchOutboundTemplateAnalytics(
   };
 }
 
+export const RANGE_DAYS: Record<string, number | null> = {
+  "7": 7,
+  "30": 30,
+  all: null,
+};
+
+// "All time" still needs a floor for the messages API — Kapso numbers
+// here are all recent, so 2 years back is effectively unbounded
+// without asking the API to paginate forever.
+export function rangeToSinceIso(range: string): string {
+  const days = RANGE_DAYS[range] ?? 30;
+  return new Date(Date.now() - (days ?? 730) * 24 * 60 * 60 * 1000).toISOString();
+}
+
+export interface AnalyticsForRange {
+  templateAnalytics: OutboundTemplateAnalytics;
+  broadcastSummary: {
+    campaigns: number;
+    recipients: number;
+    sent: number;
+    delivered: number;
+    failed: number;
+  };
+}
+
+// Shared by the /analytics page (initial server render) and the
+// /api/kapso/analytics route (client-side range switches) so the two
+// never drift on how a range maps to results.
+export async function getAnalyticsForRange(
+  phoneNumberId: string,
+  range: string,
+): Promise<AnalyticsForRange> {
+  const since = rangeToSinceIso(range);
+  const [templateAnalytics, broadcasts] = await Promise.all([
+    fetchOutboundTemplateAnalytics(phoneNumberId, since),
+    fetchKapsoBroadcasts(phoneNumberId),
+  ]);
+
+  const sinceMs = new Date(since).getTime();
+  const broadcastsInRange = broadcasts.filter(
+    (b) => new Date(b.created_at).getTime() >= sinceMs,
+  );
+  const broadcastSummary = broadcastsInRange.reduce(
+    (acc, b) => ({
+      campaigns: acc.campaigns + 1,
+      recipients: acc.recipients + b.total_recipients,
+      sent: acc.sent + b.sent_count,
+      delivered: acc.delivered + b.delivered_count,
+      failed: acc.failed + b.failed_count,
+    }),
+    { campaigns: 0, recipients: 0, sent: 0, delivered: 0, failed: 0 },
+  );
+
+  return { templateAnalytics, broadcastSummary };
+}
+
 interface KapsoReferral {
   source_type: string;
   source_id: string;
@@ -335,6 +391,16 @@ export async function fetchCtwaAttribution(
     messagesScanned,
     truncated,
   };
+}
+
+// Thin range->since wrapper, mirroring getAnalyticsForRange — shared
+// by the /ads-ctwa page (initial server render) and the
+// /api/kapso/ads-ctwa route (client-side range switches).
+export async function getCtwaAttributionForRange(
+  phoneNumberId: string,
+  range: string,
+): Promise<CtwaAttribution> {
+  return fetchCtwaAttribution(phoneNumberId, rangeToSinceIso(range));
 }
 
 export async function fetchKapsoTemplates(businessAccountId: string): Promise<KapsoTemplate[]> {

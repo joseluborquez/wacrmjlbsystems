@@ -2,13 +2,7 @@ import { NextResponse } from "next/server";
 
 import { toErrorResponse, getCurrentAccount } from "@/lib/auth/account";
 import { getAccountPhoneNumberId } from "@/lib/platform-admin/kapso-inbox";
-import { fetchCtwaAttribution } from "@/lib/platform-admin/kapso-client";
-
-const RANGE_DAYS: Record<string, number | null> = {
-  "7": 7,
-  "30": 30,
-  all: null,
-};
+import { getCtwaAttributionForRange } from "@/lib/platform-admin/kapso-client";
 
 export async function GET(request: Request) {
   try {
@@ -22,12 +16,7 @@ export async function GET(request: Request) {
     }
 
     const range = new URL(request.url).searchParams.get("range") ?? "30";
-    const days = RANGE_DAYS[range] ?? 30;
-    const since = new Date(
-      Date.now() - (days ?? 730) * 24 * 60 * 60 * 1000,
-    ).toISOString();
-
-    const attribution = await fetchCtwaAttribution(phoneNumberId, since);
+    const attribution = await getCtwaAttributionForRange(phoneNumberId, range);
     return NextResponse.json(attribution);
   } catch (err) {
     return toErrorResponse(err);

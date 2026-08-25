@@ -1,13 +1,21 @@
-"use client";
-
 // ============================================================
 // Read-only view of this account's WhatsApp message templates,
 // sourced live from Kapso (no embed exists for this section — see
 // kapso-client.ts). Scoped server-side to this account's
 // business_account_id only.
+//
+// Server component — see phone-numbers/page.tsx for why (no extra
+// client -> our API -> Kapso round trip, no "Loading…" flash).
 // ============================================================
 
-import { useEffect, useState } from "react";
+import { getCurrentAccount } from "@/lib/auth/account";
+import { getAccountPhoneNumberId } from "@/lib/platform-admin/kapso-inbox";
+import {
+  fetchKapsoPhoneNumber,
+  fetchKapsoTemplates,
+  type KapsoTemplate,
+  type KapsoTemplateComponent,
+} from "@/lib/platform-admin/kapso-client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -18,20 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-interface KapsoTemplateComponent {
-  type: string;
-  text?: string;
-}
-
-interface KapsoTemplate {
-  id: string;
-  name: string;
-  language: string;
-  status: string;
-  category: string;
-  components: KapsoTemplateComponent[];
-}
 
 function statusVariant(status: string): "default" | "outline" | "destructive" {
   if (status === "APPROVED") return "default";
@@ -45,30 +39,24 @@ function bodyPreview(components: KapsoTemplateComponent[]): string {
   return body?.text ?? "—";
 }
 
-export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<KapsoTemplate[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export default async function TemplatesPage() {
+  const { accountId } = await getCurrentAccount();
+  const phoneNumberId = await getAccountPhoneNumberId(accountId);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/kapso/templates")
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        return res.json();
-      })
-      .then((data: { templates: KapsoTemplate[] }) => {
-        if (!cancelled) setTemplates(data.templates);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  let templates: KapsoTemplate[] | null = null;
+  let error: string | null = null;
+  if (!phoneNumberId) {
+    error = "Kapso isn't configured for this account yet — ask JLB Systems to set it up";
+  } else {
+    try {
+      // Templates are looked up per business_account_id, not per
+      // phone_number_id — fetch the number first to resolve it.
+      const number = await fetchKapsoPhoneNumber(phoneNumberId);
+      templates = await fetchKapsoTemplates(number.business_account_id);
+    } catch (err) {
+      error = (err as Error).message;
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-6">
@@ -85,9 +73,7 @@ export default function TemplatesPage() {
             <p className="p-8 text-center text-sm text-muted-foreground">
               Could not load your templates: {error}
             </p>
-          ) : !templates ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : templates.length === 0 ? (
+          ) : !templates || templates.length === 0 ? (
             <p className="p-8 text-center text-sm text-muted-foreground">
               No templates yet.
             </p>

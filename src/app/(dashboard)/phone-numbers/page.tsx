@@ -1,28 +1,20 @@
-"use client";
-
 // ============================================================
 // Read-only view of this account's own WhatsApp number, sourced live
 // from Kapso (no embed exists for this section — see kapso-client.ts
 // for why it's a direct REST call instead of an iframe like the
 // inbox). Scoped server-side to this account's phone_number_id only.
+//
+// Server component: fetches during render instead of client-side
+// (which meant an extra client -> our API -> Kapso round trip before
+// anything painted). No "Loading…" flash — data arrives with the HTML.
 // ============================================================
 
-import { useEffect, useState } from "react";
 import { Phone } from "lucide-react";
+import { getCurrentAccount } from "@/lib/auth/account";
+import { getAccountPhoneNumberId } from "@/lib/platform-admin/kapso-inbox";
+import { fetchKapsoPhoneNumber, type KapsoPhoneNumber } from "@/lib/platform-admin/kapso-client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
-interface KapsoPhoneNumber {
-  display_phone_number: string;
-  verified_name: string;
-  name: string;
-  status: string;
-  quality_rating: string;
-  throughput_tier: string;
-  code_verification_status: string;
-  inbound_processing_enabled: boolean;
-  calls_enabled: boolean;
-}
 
 function statusVariant(status: string): "default" | "outline" | "destructive" {
   if (status === "CONNECTED") return "default";
@@ -32,30 +24,21 @@ function statusVariant(status: string): "default" | "outline" | "destructive" {
   return "outline";
 }
 
-export default function PhoneNumbersPage() {
-  const [number, setNumber] = useState<KapsoPhoneNumber | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export default async function PhoneNumbersPage() {
+  const { accountId } = await getCurrentAccount();
+  const phoneNumberId = await getAccountPhoneNumberId(accountId);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/kapso/phone-number")
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        return res.json();
-      })
-      .then((data: { number: KapsoPhoneNumber }) => {
-        if (!cancelled) setNumber(data.number);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  let number: KapsoPhoneNumber | null = null;
+  let error: string | null = null;
+  if (!phoneNumberId) {
+    error = "Kapso isn't configured for this account yet — ask JLB Systems to set it up";
+  } else {
+    try {
+      number = await fetchKapsoPhoneNumber(phoneNumberId);
+    } catch (err) {
+      error = (err as Error).message;
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-6">
@@ -72,13 +55,7 @@ export default function PhoneNumbersPage() {
             Could not load your phone number: {error}
           </CardContent>
         </Card>
-      ) : !number ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Loading…
-          </CardContent>
-        </Card>
-      ) : (
+      ) : number ? (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -130,7 +107,7 @@ export default function PhoneNumbersPage() {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }

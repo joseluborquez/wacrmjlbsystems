@@ -1,14 +1,20 @@
-"use client";
-
 // ============================================================
 // Read-only view of this account's WhatsApp Flows (Meta's native
 // interactive forms — surveys, booking, lead capture — not to be
 // confused with wacrm's own /flows automation builder). No embed
 // exists for this section (see kapso-client.ts). Scoped server-side
 // to this account's own phone_number_id.
+//
+// Server component — see phone-numbers/page.tsx for why (no extra
+// client -> our API -> Kapso round trip, no "Loading…" flash).
 // ============================================================
 
-import { useEffect, useState } from "react";
+import { getCurrentAccount } from "@/lib/auth/account";
+import { getAccountPhoneNumberId } from "@/lib/platform-admin/kapso-inbox";
+import {
+  fetchKapsoWhatsappFlows,
+  type KapsoWhatsappFlow,
+} from "@/lib/platform-admin/kapso-client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -20,44 +26,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-interface KapsoWhatsappFlow {
-  id: string;
-  name: string;
-  status: string;
-  json_version: string;
-  has_data_endpoint: boolean;
-  published_at: string | null;
-  created_at: string;
-}
-
 function statusVariant(status: string): "default" | "outline" {
   return status === "published" ? "default" : "outline";
 }
 
-export default function WhatsappFlowsPage() {
-  const [flows, setFlows] = useState<KapsoWhatsappFlow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export default async function WhatsappFlowsPage() {
+  const { accountId } = await getCurrentAccount();
+  const phoneNumberId = await getAccountPhoneNumberId(accountId);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/kapso/whatsapp-flows")
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        return res.json();
-      })
-      .then((data: { flows: KapsoWhatsappFlow[] }) => {
-        if (!cancelled) setFlows(data.flows);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  let flows: KapsoWhatsappFlow[] | null = null;
+  let error: string | null = null;
+  if (!phoneNumberId) {
+    error = "Kapso isn't configured for this account yet — ask JLB Systems to set it up";
+  } else {
+    try {
+      flows = await fetchKapsoWhatsappFlows(phoneNumberId);
+    } catch (err) {
+      error = (err as Error).message;
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-6">
@@ -75,9 +62,7 @@ export default function WhatsappFlowsPage() {
             <p className="p-8 text-center text-sm text-muted-foreground">
               Could not load your WhatsApp Flows: {error}
             </p>
-          ) : !flows ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : flows.length === 0 ? (
+          ) : !flows || flows.length === 0 ? (
             <p className="p-8 text-center text-sm text-muted-foreground">
               No WhatsApp Flows yet.
             </p>
