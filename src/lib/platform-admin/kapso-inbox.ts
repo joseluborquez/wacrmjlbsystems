@@ -82,6 +82,24 @@ export async function getAccountKapsoEmbedUrl(accountId: string): Promise<string
   return `https://inbox.kapso.ai/embed/${token}?mode=dark&language=en`;
 }
 
+/** The phone_number_id on file for one account, or null if the
+ * platform admin hasn't configured it yet. Used by the Phone Numbers
+ * and Templates pages to scope their Kapso API calls to this account's
+ * own number — never the whole Kapso project. */
+export async function getAccountPhoneNumberId(accountId: string): Promise<string | null> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("kapso_inbox_configs")
+    .select("phone_number_id")
+    .eq("account_id", accountId)
+    .maybeSingle();
+  if (error) {
+    console.error("[getAccountPhoneNumberId] fetch failed:", error);
+    throw new Error("Could not load the Kapso config for this account");
+  }
+  return (data?.phone_number_id as string | null) ?? null;
+}
+
 export async function listAccountsWithKapsoToken(): Promise<Set<string>> {
   const db = supabaseAdmin();
   const { data, error } = await db.from("kapso_inbox_configs").select("account_id");
