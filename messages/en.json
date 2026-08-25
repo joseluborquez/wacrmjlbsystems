@@ -29,6 +29,7 @@
     "phoneNumbers": "Phone Numbers",
     "templates": "Templates",
     "whatsappFlows": "WhatsApp Flows",
+    "analytics": "Analytics",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",

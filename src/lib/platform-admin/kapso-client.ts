@@ -119,6 +119,111 @@ export async function fetchKapsoWhatsappFlows(
   return (body.data ?? []) as KapsoWhatsappFlow[];
 }
 
+interface KapsoOutboundMessage {
+  type: string;
+  template?: { name: string };
+  kapso: { status: string; direction: string };
+}
+
+export interface TemplateStatRow {
+  templateName: string;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+}
+
+export interface OutboundTemplateAnalytics {
+  totals: { sent: number; delivered: number; read: number; failed: number };
+  byTemplate: TemplateStatRow[];
+  messagesScanned: number;
+  truncated: boolean;
+}
+
+// Kapso has no dedicated analytics endpoint — this walks outbound
+// messages in the range and aggregates by (template name, final
+// status) client-side. Capped at MAX_PAGES * 100 messages so a busy
+// number can't turn one page load into an unbounded scrape; recent
+// activity is what the analytics view cares about anyway.
+const MAX_PAGES = 5;
+const PAGE_SIZE = 100;
+
+export async function fetchOutboundTemplateAnalytics(
+  phoneNumberId: string,
+  sinceIso: string,
+): Promise<OutboundTemplateAnalytics> {
+  const apiKey = await kapsoApiKey();
+  const byTemplate = new Map<string, TemplateStatRow>();
+  const totals = { sent: 0, delivered: 0, read: 0, failed: 0 };
+  let messagesScanned = 0;
+  let cursor: string | null = null;
+  let truncated = false;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const url = new URL(`${META_PROXY_BASE}/${phoneNumberId}/messages`);
+    url.searchParams.set("direction", "outbound");
+    url.searchParams.set("since", sinceIso);
+    url.searchParams.set("limit", String(PAGE_SIZE));
+    if (cursor) url.searchParams.set("after", cursor);
+
+    const res = await fetch(url.toString(), { headers: { "X-API-Key": apiKey } });
+    if (!res.ok) {
+      throw new Error(`Kapso messages API returned ${res.status}`);
+    }
+    const body = await res.json();
+    const messages = (body.data ?? []) as KapsoOutboundMessage[];
+    messagesScanned += messages.length;
+
+    for (const msg of messages) {
+      if (msg.type !== "template" || !msg.template) continue;
+      const name = msg.template.name;
+      const row = byTemplate.get(name) ?? {
+        templateName: name,
+        sent: 0,
+        delivered: 0,
+        read: 0,
+        failed: 0,
+      };
+      // "Sent" is the denominator (every template send attempt).
+      // Delivered/Read are cumulative subsets of that funnel (read
+      // implies delivered); Failed is the separate terminal state for
+      // attempts that never made it — same shape as Kapso's own
+      // dashboard (Sent 100%, Delivered/Read/Error as independent %
+      // of that base), not mutually-exclusive buckets.
+      row.sent++;
+      totals.sent++;
+      if (msg.kapso.status === "delivered" || msg.kapso.status === "read") {
+        row.delivered++;
+        totals.delivered++;
+      }
+      if (msg.kapso.status === "read") {
+        row.read++;
+        totals.read++;
+      }
+      if (msg.kapso.status === "failed") {
+        row.failed++;
+        totals.failed++;
+      }
+      byTemplate.set(name, row);
+    }
+
+    const nextCursor = body.paging?.cursors?.after as string | undefined;
+    if (!nextCursor || messages.length < PAGE_SIZE) {
+      cursor = null;
+      break;
+    }
+    cursor = nextCursor;
+    if (page === MAX_PAGES - 1) truncated = true;
+  }
+
+  return {
+    totals,
+    byTemplate: Array.from(byTemplate.values()).sort((a, b) => b.sent - a.sent),
+    messagesScanned,
+    truncated,
+  };
+}
+
 export async function fetchKapsoTemplates(businessAccountId: string): Promise<KapsoTemplate[]> {
   const apiKey = await kapsoApiKey();
   const res = await fetch(
