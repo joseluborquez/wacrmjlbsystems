@@ -64,6 +64,34 @@ export interface KapsoTemplate {
   components: KapsoTemplateComponent[];
 }
 
+export interface KapsoBroadcast {
+  id: string;
+  name: string;
+  status: string;
+  phone_number_id: string;
+  total_recipients: number;
+  sent_count: number;
+  failed_count: number;
+  delivered_count: number;
+  response_rate: number | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export async function fetchKapsoBroadcasts(phoneNumberId: string): Promise<KapsoBroadcast[]> {
+  const apiKey = await kapsoApiKey();
+  const res = await fetch(
+    `${PLATFORM_API_BASE}/whatsapp/broadcasts?phone_number_id=${phoneNumberId}&per_page=50`,
+    { headers: { "X-API-Key": apiKey } },
+  );
+  if (!res.ok) {
+    throw new Error(`Kapso broadcasts API returned ${res.status}`);
+  }
+  const body = await res.json();
+  return (body.data ?? []) as KapsoBroadcast[];
+}
+
 export async function fetchKapsoTemplates(businessAccountId: string): Promise<KapsoTemplate[]> {
   const apiKey = await kapsoApiKey();
   const res = await fetch(
