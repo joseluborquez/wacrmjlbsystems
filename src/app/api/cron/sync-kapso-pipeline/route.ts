@@ -7,6 +7,11 @@
 //
 // Gated by CRON_SECRET (a shared secret in the request, not a user
 // session) since this isn't something a logged-in browser calls.
+// Vercel Cron Jobs automatically send `Authorization: Bearer
+// $CRON_SECRET` on every invocation when a project env var literally
+// named CRON_SECRET is set — https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs
+// so that's the header this checks. Manual/local calls (e.g. curl)
+// need to send that same header explicitly.
 // ============================================================
 
 import { NextResponse } from "next/server";
@@ -15,8 +20,8 @@ import { listAccountsForPipelineSync } from "@/lib/platform-admin/kapso-inbox";
 import { syncAccountPipeline } from "@/lib/platform-admin/kapso-pipeline-sync";
 
 export async function GET(request: Request) {
-  const secret = request.headers.get("x-cron-secret");
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+  const authHeader = request.headers.get("authorization");
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
