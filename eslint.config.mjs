@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored minified opus-recorder encoder worker (served statically).
     "public/opus/**",
+    // Local Supabase CLI state (gitignored, never present in CI) —
+    // bundled/minified edge-runtime code that isn't ours to lint.
+    "supabase/.temp/**",
+    "supabase/.branches/**",
   ]),
 ]);
 

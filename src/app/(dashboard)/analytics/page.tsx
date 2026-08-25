@@ -69,15 +69,23 @@ function StatCard({ label, value, hint }: { label: string; value: number; hint?:
   );
 }
 
+interface FetchState {
+  range: string;
+  data: AnalyticsResponse | null;
+  error: string | null;
+}
+
 export default function AnalyticsPage() {
   const [range, setRange] = useState<(typeof RANGES)[number]["value"]>("30");
-  const [data, setData] = useState<AnalyticsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Tags each result with the range it answers, so "loading" is
+  // derived (result.range !== range) instead of an imperative reset
+  // at the top of the effect — avoids a synchronous setState call in
+  // the effect body while still showing a fresh loading state on
+  // every range switch.
+  const [result, setResult] = useState<FetchState>({ range: "30", data: null, error: null });
 
   useEffect(() => {
     let cancelled = false;
-    setData(null);
-    setError(null);
     fetch(`/api/kapso/analytics?range=${range}`)
       .then(async (res) => {
         if (!res.ok) {
@@ -87,15 +95,19 @@ export default function AnalyticsPage() {
         return res.json();
       })
       .then((body: AnalyticsResponse) => {
-        if (!cancelled) setData(body);
+        if (!cancelled) setResult({ range, data: body, error: null });
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setResult({ range, data: null, error: err.message });
       });
     return () => {
       cancelled = true;
     };
   }, [range]);
+
+  const loading = result.range !== range;
+  const data = loading ? null : result.data;
+  const error = loading ? null : result.error;
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-6">
@@ -103,7 +115,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Outbound template message and broadcast performance, computed from Kapso's
+            Outbound template message and broadcast performance, computed from Kapso
             message data (Kapso has no built-in analytics API to pull this pre-aggregated).
           </p>
         </div>
