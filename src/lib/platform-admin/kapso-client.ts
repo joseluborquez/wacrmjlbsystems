@@ -224,6 +224,119 @@ export async function fetchOutboundTemplateAnalytics(
   };
 }
 
+interface KapsoReferral {
+  source_type: string;
+  source_id: string;
+  source_url?: string;
+  headline?: string;
+  body?: string;
+  media_type?: string;
+  thumbnail_url?: string;
+  video_url?: string;
+  image_url?: string;
+}
+
+interface KapsoInboundMessage {
+  referral?: KapsoReferral;
+  kapso: { whatsapp_conversation_id: string };
+  timestamp: string;
+}
+
+export interface CtwaAdRow {
+  sourceId: string;
+  headline: string | null;
+  body: string | null;
+  sourceUrl: string | null;
+  mediaType: string | null;
+  thumbnailUrl: string | null;
+  leads: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface CtwaAttribution {
+  ads: CtwaAdRow[];
+  totalLeads: number;
+  messagesScanned: number;
+  truncated: boolean;
+}
+
+// Meta attaches a `referral` object to the first inbound message of a
+// click-to-WhatsApp conversation — there's no separate "ads" endpoint,
+// so (same as analytics) this walks inbound messages in range and
+// aggregates by ad (referral.source_id). Only source_type "ad" counts
+// here — Meta also uses `referral` for organic post/profile clicks,
+// which aren't ad spend and don't belong in a CTWA view.
+export async function fetchCtwaAttribution(
+  phoneNumberId: string,
+  sinceIso: string,
+): Promise<CtwaAttribution> {
+  const apiKey = await kapsoApiKey();
+  const byAd = new Map<string, CtwaAdRow>();
+  const seenConversations = new Set<string>();
+  let messagesScanned = 0;
+  let cursor: string | null = null;
+  let truncated = false;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const url = new URL(`${META_PROXY_BASE}/${phoneNumberId}/messages`);
+    url.searchParams.set("direction", "inbound");
+    url.searchParams.set("since", sinceIso);
+    url.searchParams.set("limit", String(PAGE_SIZE));
+    if (cursor) url.searchParams.set("after", cursor);
+
+    const res = await fetch(url.toString(), { headers: { "X-API-Key": apiKey } });
+    if (!res.ok) {
+      throw new Error(`Kapso messages API returned ${res.status}`);
+    }
+    const body = await res.json();
+    const messages = (body.data ?? []) as KapsoInboundMessage[];
+    messagesScanned += messages.length;
+
+    for (const msg of messages) {
+      const ref = msg.referral;
+      if (!ref || ref.source_type !== "ad") continue;
+      // A contact can message again later without a fresh referral,
+      // but if the same conversation somehow carries >1 referral hit,
+      // don't double-count the lead.
+      const convId = msg.kapso.whatsapp_conversation_id;
+      if (seenConversations.has(convId)) continue;
+      seenConversations.add(convId);
+
+      const row = byAd.get(ref.source_id) ?? {
+        sourceId: ref.source_id,
+        headline: ref.headline ?? null,
+        body: ref.body ?? null,
+        sourceUrl: ref.source_url ?? null,
+        mediaType: ref.media_type ?? null,
+        thumbnailUrl: ref.thumbnail_url ?? null,
+        leads: 0,
+        firstSeen: msg.timestamp,
+        lastSeen: msg.timestamp,
+      };
+      row.leads++;
+      if (msg.timestamp < row.firstSeen) row.firstSeen = msg.timestamp;
+      if (msg.timestamp > row.lastSeen) row.lastSeen = msg.timestamp;
+      byAd.set(ref.source_id, row);
+    }
+
+    const nextCursor = body.paging?.cursors?.after as string | undefined;
+    if (!nextCursor || messages.length < PAGE_SIZE) {
+      cursor = null;
+      break;
+    }
+    cursor = nextCursor;
+    if (page === MAX_PAGES - 1) truncated = true;
+  }
+
+  return {
+    ads: Array.from(byAd.values()).sort((a, b) => b.leads - a.leads),
+    totalLeads: seenConversations.size,
+    messagesScanned,
+    truncated,
+  };
+}
+
 export async function fetchKapsoTemplates(businessAccountId: string): Promise<KapsoTemplate[]> {
   const apiKey = await kapsoApiKey();
   const res = await fetch(
