@@ -92,6 +92,33 @@ export async function fetchKapsoBroadcasts(phoneNumberId: string): Promise<Kapso
   return (body.data ?? []) as KapsoBroadcast[];
 }
 
+export interface KapsoWhatsappFlow {
+  id: string;
+  name: string;
+  status: string;
+  meta_flow_id: string;
+  json_version: string;
+  has_data_endpoint: boolean;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchKapsoWhatsappFlows(
+  phoneNumberId: string,
+): Promise<KapsoWhatsappFlow[]> {
+  const apiKey = await kapsoApiKey();
+  const res = await fetch(
+    `${PLATFORM_API_BASE}/whatsapp/flows?phone_number_id=${phoneNumberId}&per_page=50`,
+    { headers: { "X-API-Key": apiKey } },
+  );
+  if (!res.ok) {
+    throw new Error(`Kapso WhatsApp Flows API returned ${res.status}`);
+  }
+  const body = await res.json();
+  return (body.data ?? []) as KapsoWhatsappFlow[];
+}
+
 export async function fetchKapsoTemplates(businessAccountId: string): Promise<KapsoTemplate[]> {
   const apiKey = await kapsoApiKey();
   const res = await fetch(

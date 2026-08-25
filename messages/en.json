@@ -28,6 +28,7 @@
     "kapsoInbox": "Kapso Inbox",
     "phoneNumbers": "Phone Numbers",
     "templates": "Templates",
+    "whatsappFlows": "WhatsApp Flows",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
