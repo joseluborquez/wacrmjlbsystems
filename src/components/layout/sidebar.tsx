@@ -10,7 +10,6 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   BarChart3,
   Bell,
-  Bot,
   Crown,
   FileText,
   GitBranch,
@@ -28,9 +27,7 @@ import {
   UserCog,
   Users,
   UsersRound,
-  Workflow,
   X,
-  Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -107,9 +104,6 @@ const navItems: NavItem[] = [
   { href: "/whatsapp-flows", labelKey: "whatsappFlows", icon: ListChecks },
   { href: "/analytics", labelKey: "analytics", icon: BarChart3 },
   { href: "/ads-ctwa", labelKey: "adsCtwa", icon: Megaphone },
-  { href: "/automations", labelKey: "automations", icon: Zap },
-  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
-  { href: "/agents", labelKey: "aiAgents", icon: Bot },
 ];
 
 const bottomNavItems = [
