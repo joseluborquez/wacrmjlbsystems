@@ -17,8 +17,8 @@ import { Fragment } from "react";
 import { redirect } from "next/navigation";
 
 import { requirePlatformAdmin } from "@/lib/auth/platform-admin";
-import { loadPlatformAccounts } from "@/lib/platform-admin/queries";
-import { listAccountsWithKapsoToken } from "@/lib/platform-admin/kapso-inbox";
+import { loadCurrentMonthAudioUsage, loadPlatformAccounts } from "@/lib/platform-admin/queries";
+import { listAccountsForPipelineSync, listAccountsWithKapsoToken } from "@/lib/platform-admin/kapso-inbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { saveKapsoInboxTokenAction } from "./actions";
+import { recalculateAudioUsageAction, saveKapsoInboxTokenAction } from "./actions";
 
 export default async function PlatformAdminPage() {
   try {
@@ -41,10 +41,13 @@ export default async function PlatformAdminPage() {
     redirect("/dashboard");
   }
 
-  const [accounts, accountsWithKapso] = await Promise.all([
+  const [accounts, accountsWithKapso, audioUsageByAccount, kapsoEligible] = await Promise.all([
     loadPlatformAccounts(),
     listAccountsWithKapsoToken(),
+    loadCurrentMonthAudioUsage(),
+    listAccountsForPipelineSync(),
   ]);
+  const eligibleForAudioUsage = new Set(kapsoEligible.map((c) => c.accountId));
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-6">
@@ -75,11 +78,14 @@ export default async function PlatformAdminPage() {
                 <TableHead className="text-right">Contactos</TableHead>
                 <TableHead className="text-right">Conversaciones</TableHead>
                 <TableHead className="text-right">Mensajes (30d)</TableHead>
+                <TableHead className="text-right">Audio voz (mes)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {accounts.map((a) => {
                 const hasKapsoToken = accountsWithKapso.has(a.id);
+                const audioUsage = audioUsageByAccount.get(a.id);
+                const canRecalculateAudio = eligibleForAudioUsage.has(a.id);
                 return (
                   <Fragment key={a.id}>
                     <TableRow>
@@ -108,9 +114,44 @@ export default async function PlatformAdminPage() {
                       <TableCell className="text-right">
                         {a.messagesLast30d.toLocaleString()}
                       </TableCell>
+                      <TableCell className="text-right">
+                        {!canRecalculateAudio ? (
+                          <span className="text-xs text-muted-foreground">Sin Kapso</span>
+                        ) : (
+                          <div className="flex flex-col items-end gap-1">
+                            {audioUsage ? (
+                              <>
+                                <span className="font-medium">
+                                  {audioUsage.totalMinutes.toFixed(1)} min
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {audioUsage.processedCount - audioUsage.skippedCount} de{" "}
+                                  {audioUsage.messageCount} notas
+                                  {audioUsage.skippedCount > 0 &&
+                                    ` · ${audioUsage.skippedCount} omitidas`}
+                                </span>
+                                {audioUsage.truncated && (
+                                  <Badge variant="secondary">Parcial</Badge>
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(audioUsage.computedAt).toLocaleString("es-CL")}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Sin calcular</span>
+                            )}
+                            <form action={recalculateAudioUsageAction}>
+                              <input type="hidden" name="accountId" value={a.id} />
+                              <Button type="submit" size="sm" variant="outline">
+                                Recalcular
+                              </Button>
+                            </form>
+                          </div>
+                        )}
+                      </TableCell>
                     </TableRow>
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={7} className="bg-muted/30 py-3">
+                      <TableCell colSpan={8} className="bg-muted/30 py-3">
                         <form action={saveKapsoInboxTokenAction} className="flex items-end gap-2">
                           <input type="hidden" name="accountId" value={a.id} />
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -152,7 +193,7 @@ export default async function PlatformAdminPage() {
               })}
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     Todavía no hay cuentas.
                   </TableCell>
                 </TableRow>

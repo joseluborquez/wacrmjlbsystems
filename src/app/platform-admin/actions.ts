@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { requirePlatformAdmin } from "@/lib/auth/platform-admin";
-import { setAccountKapsoToken } from "@/lib/platform-admin/kapso-inbox";
+import { getAccountPhoneNumberId, setAccountKapsoToken } from "@/lib/platform-admin/kapso-inbox";
+import { recalculateAudioUsage } from "@/lib/platform-admin/kapso-audio-usage";
 
 export async function saveKapsoInboxTokenAction(formData: FormData): Promise<void> {
   const { userId } = await requirePlatformAdmin();
@@ -18,5 +19,22 @@ export async function saveKapsoInboxTokenAction(formData: FormData): Promise<voi
   }
 
   await setAccountKapsoToken(accountId, token, phoneLabel, phoneNumberId, userId);
+  revalidatePath("/platform-admin");
+}
+
+export async function recalculateAudioUsageAction(formData: FormData): Promise<void> {
+  const { userId } = await requirePlatformAdmin();
+
+  const accountId = String(formData.get("accountId") ?? "");
+  if (!accountId) {
+    throw new Error("Missing accountId");
+  }
+
+  const phoneNumberId = await getAccountPhoneNumberId(accountId);
+  if (!phoneNumberId) {
+    throw new Error("This account doesn't have a Kapso phone_number_id configured");
+  }
+
+  await recalculateAudioUsage(accountId, phoneNumberId, userId);
   revalidatePath("/platform-admin");
 }

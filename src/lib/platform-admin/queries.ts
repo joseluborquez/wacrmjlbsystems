@@ -10,6 +10,7 @@
 // ============================================================
 
 import { supabaseAdmin } from "./admin-client";
+import { currentMonthPeriod } from "./kapso-audio-usage";
 
 export interface PlatformAccountSummary {
   id: string;
@@ -90,4 +91,50 @@ function countBy(rows: Record<string, unknown>[], key: string): Map<string, numb
     map.set(k, (map.get(k) ?? 0) + 1);
   }
   return map;
+}
+
+export interface PlatformAudioUsageSummary {
+  totalMinutes: number;
+  messageCount: number;
+  processedCount: number;
+  skippedCount: number;
+  truncated: boolean;
+  computedAt: string;
+}
+
+/** Current-month audio usage per account, keyed by account_id — a
+ * direct equality filter on the deterministic UTC month boundaries
+ * from currentMonthPeriod(), not a "latest row ever" reduction. */
+export async function loadCurrentMonthAudioUsage(): Promise<
+  Map<string, PlatformAudioUsageSummary>
+> {
+  const db = supabaseAdmin();
+  const period = currentMonthPeriod();
+
+  const { data, error } = await db
+    .from("platform_audio_usage")
+    .select(
+      "account_id, total_seconds, message_count, processed_count, skipped_count, truncated, computed_at",
+    )
+    .eq("period_start", period.start.toISOString())
+    .eq("period_end", period.end.toISOString());
+
+  if (error) {
+    console.error("[loadCurrentMonthAudioUsage] fetch failed:", error);
+    throw new Error("Could not load audio usage");
+  }
+
+  return new Map(
+    (data ?? []).map((row) => [
+      row.account_id as string,
+      {
+        totalMinutes: (row.total_seconds as number) / 60,
+        messageCount: row.message_count as number,
+        processedCount: row.processed_count as number,
+        skippedCount: row.skipped_count as number,
+        truncated: row.truncated as boolean,
+        computedAt: row.computed_at as string,
+      },
+    ]),
+  );
 }
